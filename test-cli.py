@@ -1,10 +1,15 @@
+import os
+
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 GIGYA_BASE_URL = "https://accounts.eu1.gigya.com"
 GIGYA_LOGIN_ENDPOINT = f"{GIGYA_BASE_URL}/accounts.login"
 GIGYA_GET_JWT_ENDPOINT = f"{GIGYA_BASE_URL}/accounts.getJWT"
 
-GIGYA_API_KEY = "GYGA_API_KEY"
+GIGYA_API_KEY = os.getenv("GIGYA_API_KEY")
 
 # appliance_kit AWSConstants: EU + PRODUCTION (not identity_kit manifest URLs)
 AWS_BASE_URL = "https://8q8c9xktb0.execute-api.eu-central-1.amazonaws.com/dlg-prod/"
@@ -77,8 +82,8 @@ def list_devices(aws_token: str) -> dict:
 
 
 if __name__ == "__main__":
-    username = "USERNAME"
-    password = "PASSWORD"
+    username = os.getenv("USERNAME")
+    password = os.getenv("PASSWORD")
 
     login_response = gigya_login(username, password)
     print("Gigya login response:", login_response)
