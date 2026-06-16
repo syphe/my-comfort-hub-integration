@@ -267,6 +267,52 @@ def run_send_command(aws_token: str, machine_name: str, command: dict) -> None:
         client.disconnect()
 
 
+def build_app_command(
+    message: str,
+    values: dict,
+    app_id: str = "comfort",
+    app_id_key: str = "AppId",
+    request_id_key: str = "RequestId",
+) -> dict:
+    command = {
+        app_id_key: app_id,
+        "Message": message,
+        request_id_key: uuid.uuid4().hex,
+    }
+    command.update(values)
+    return command
+
+
+def run_templated_command(
+    aws_token: str,
+    machine_name: str,
+    message: str,
+    values: dict,
+    app_id: str,
+    app_id_key: str,
+    request_id_key: str,
+    dry_run: bool,
+) -> None:
+    command = build_app_command(
+        message=message,
+        values=values,
+        app_id=app_id,
+        app_id_key=app_id_key,
+        request_id_key=request_id_key,
+    )
+    print(json.dumps(command, indent=2, sort_keys=True))
+    if dry_run:
+        return
+    run_send_command(aws_token, machine_name, command)
+
+
+def add_template_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--app-id", default="comfort")
+    parser.add_argument("--app-id-key", choices=["AppId", "AppID", "appId", "appID"], default="AppId")
+    parser.add_argument("--request-id-key", choices=["RequestId", "RequestID", "requestId", "requestID"], default="RequestId")
+    parser.add_argument("--dry-run", action="store_true")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="My Comfort Hub API/MQTT test client")
     subparsers = parser.add_subparsers(dest="command", required=False)
@@ -285,14 +331,33 @@ def build_parser() -> argparse.ArgumentParser:
     send_command.add_argument("machine_name")
     send_command.add_argument("json_payload", help='JSON object to publish, for example {"Command":"..."}')
 
+    set_temp = subparsers.add_parser("set-temp")
+    set_temp.add_argument("machine_name")
+    set_temp.add_argument("temperature", type=float)
+    set_temp.add_argument("--unit", choices=["C", "F"], default="C")
+    set_temp.add_argument("--field", default="temp")
+    add_template_options(set_temp)
+
+    set_power = subparsers.add_parser("set-power")
+    set_power.add_argument("machine_name")
+    set_power.add_argument("state", choices=["ON", "OFF", "on", "off"])
+    set_power.add_argument("--field", default="DeviceStatus")
+    add_template_options(set_power)
+
+    set_eco = subparsers.add_parser("set-eco")
+    set_eco.add_argument("machine_name")
+    set_eco.add_argument("state", choices=["on", "off", "true", "false", "1", "0"])
+    set_eco.add_argument("--field", default="isEcoMode")
+    add_template_options(set_eco)
+
     return parser
 
 
 if __name__ == "__main__":
     args = build_parser().parse_args()
-    token = login_and_get_token()
 
     if args.command in (None, "list-devices"):
+        token = login_and_get_token()
         devices = list_devices(token)
         print(json.dumps(devices, indent=2, sort_keys=True))
         parsed_devices = extract_devices(devices)
@@ -301,13 +366,55 @@ if __name__ == "__main__":
             for device in parsed_devices:
                 print(f"- {device.get('machineName')}")
     elif args.command == "list-jobs":
+        token = login_and_get_token()
         print(json.dumps(list_jobs(token), indent=2, sort_keys=True))
     elif args.command == "monitor":
+        token = login_and_get_token()
         run_monitor(token, args.machine_name)
     elif args.command == "shadow-get":
+        token = login_and_get_token()
         run_shadow_get(token, args.machine_name, args.shadow_name)
     elif args.command == "send-command":
+        token = login_and_get_token()
         payload = json.loads(args.json_payload)
         if not isinstance(payload, dict):
             raise ValueError("json_payload must be a JSON object")
         run_send_command(token, args.machine_name, payload)
+    elif args.command == "set-temp":
+        token = "" if args.dry_run else login_and_get_token()
+        message = f"SetRoomTempRequest_deg{args.unit}"
+        run_templated_command(
+            token,
+            args.machine_name,
+            message,
+            {args.field: args.temperature},
+            args.app_id,
+            args.app_id_key,
+            args.request_id_key,
+            args.dry_run,
+        )
+    elif args.command == "set-power":
+        token = "" if args.dry_run else login_and_get_token()
+        run_templated_command(
+            token,
+            args.machine_name,
+            "SetDeviceStatusRequest",
+            {args.field: args.state.upper()},
+            args.app_id,
+            args.app_id_key,
+            args.request_id_key,
+            args.dry_run,
+        )
+    elif args.command == "set-eco":
+        token = "" if args.dry_run else login_and_get_token()
+        state = args.state.lower() in {"on", "true", "1"}
+        run_templated_command(
+            token,
+            args.machine_name,
+            "SetEcoModeRequest",
+            {args.field: state},
+            args.app_id,
+            args.app_id_key,
+            args.request_id_key,
+            args.dry_run,
+        )
