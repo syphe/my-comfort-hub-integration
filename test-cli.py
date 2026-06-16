@@ -104,10 +104,10 @@ def list_jobs(aws_token: str) -> dict:
 
 
 def login_and_get_token() -> str:
-    username = os.getenv("USERNAME")
-    password = os.getenv("PASSWORD")
+    username = os.getenv("DELONGHI_USERNAME")
+    password = os.getenv("DELONGHI_PASSWORD")
     if not username or not password:
-        raise ValueError("USERNAME and PASSWORD must be set in .env")
+        raise ValueError("DELONGHI_USERNAME and DELONGHI_PASSWORD must be set in .env")
 
     login_response = gigya_login(username, password)
     session_token, session_secret = extract_session_credentials(login_response)
