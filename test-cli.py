@@ -284,7 +284,6 @@ def build_app_command(
         app_id_key: app_id,
         "Message": message,
         request_id_key: ''.join(secrets.choice(string.ascii_letters) for _ in range(5)),
-        "Response": "OK",
         "TimeStamp": f"{time.strftime('%H:%M:%S')} - {time.strftime('%d.%m.%Y')}",
     }
     command.update(values)
@@ -349,13 +348,13 @@ def build_parser() -> argparse.ArgumentParser:
     set_power = subparsers.add_parser("set-power")
     set_power.add_argument("machine_name")
     set_power.add_argument("state", choices=["ON", "OFF", "on", "off"])
-    set_power.add_argument("--field", default="DeviceStatus")
+    set_power.add_argument("--field", default="Value")
     add_template_options(set_power)
 
     set_eco = subparsers.add_parser("set-eco")
     set_eco.add_argument("machine_name")
     set_eco.add_argument("state", choices=["on", "off", "true", "false", "1", "0"])
-    set_eco.add_argument("--field", default="isEcoMode")
+    set_eco.add_argument("--field", default="Value")
     add_template_options(set_eco)
 
     return parser
@@ -403,11 +402,12 @@ if __name__ == "__main__":
         )
     elif args.command == "set-power":
         token = "" if args.dry_run else login_and_get_token()
+        value = 1 if args.state.lower() == "on" else 0
         run_templated_command(
             token,
             args.machine_name,
             "SetDeviceStatusRequest",
-            {args.field: args.state.upper()},
+            {args.field: value},
             args.app_id,
             args.app_id_key,
             args.request_id_key,
@@ -416,11 +416,12 @@ if __name__ == "__main__":
     elif args.command == "set-eco":
         token = "" if args.dry_run else login_and_get_token()
         state = args.state.lower() in {"on", "true", "1"}
+        value = 1 if state else 0
         run_templated_command(
             token,
             args.machine_name,
             "SetEcoModeRequest",
-            {args.field: state},
+            {args.field: value},
             args.app_id,
             args.app_id_key,
             args.request_id_key,
