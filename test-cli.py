@@ -1,7 +1,9 @@
 import os
 import argparse
 import json
+import secrets
 import ssl
+import string
 import time
 import uuid
 
@@ -181,6 +183,10 @@ def mqtt_connect(aws_token: str, on_message=None) -> mqtt.Client:
     client = create_mqtt_client(aws_token, on_message=on_message)
     client.connect(MQTT_HOST, port=443, keepalive=20)
     client.loop_start()
+
+    while not client.is_connected():
+        print("Waiting for MQTT connection...")
+        time.sleep(0.25)
     return client
 
 
@@ -277,7 +283,9 @@ def build_app_command(
     command = {
         app_id_key: app_id,
         "Message": message,
-        request_id_key: uuid.uuid4().hex,
+        request_id_key: ''.join(secrets.choice(string.ascii_letters) for _ in range(5)),
+        "Response": "OK",
+        "TimeStamp": f"{time.strftime('%H:%M:%S')} - {time.strftime('%d.%m.%Y')}",
     }
     command.update(values)
     return command
@@ -333,9 +341,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_temp = subparsers.add_parser("set-temp")
     set_temp.add_argument("machine_name")
-    set_temp.add_argument("temperature", type=float)
+    set_temp.add_argument("temperature", type=int)
     set_temp.add_argument("--unit", choices=["C", "F"], default="C")
-    set_temp.add_argument("--field", default="temp")
+    set_temp.add_argument("--field", default="Value")
     add_template_options(set_temp)
 
     set_power = subparsers.add_parser("set-power")
