@@ -1,0 +1,9 @@
+{
+  "domain": "delonghi_my_comfort_hub",
+  "name": "Delonghi My Comfort Hub",
+  "documentation": "https://home-assistant.io",
+  "dependencies": [],
+  "codeowners": [],
+  "requirements": [],
+  "version": "1.0.0"
+}
