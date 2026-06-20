@@ -21,7 +21,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
     gigya_api_key = domain_config["gigya_api_key"]
 
     api = MyComfortHubApi(username, password, gigya_api_key)
-    api.authenticate()
+    await api.authenticate()
 
     if not api.is_authenticated():
         _LOGGER.error("Failed to authenticate with Delonghi My Comfort Hub API")

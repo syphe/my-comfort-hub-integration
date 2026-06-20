@@ -17,8 +17,8 @@ class MyComfortHubApi:
         self.gigya_api_key = gigya_api_key
         self.gigya_api = GigyaApi(gigya_api_key)
 
-    def authenticate(self):
-        self.gigya_api.login(self.username, self.password)
+    async def authenticate(self):
+        await self.gigya_api.login(self.username, self.password)
 
         if not self.gigya_api.is_authenticated():
             raise Exception("Authentication failed with Gigya API")

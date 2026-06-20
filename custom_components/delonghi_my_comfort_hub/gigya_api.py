@@ -1,5 +1,7 @@
 import requests
 
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
 GIGYA_BASE_URL = "https://accounts.eu1.gigya.com"
 GIGYA_LOGIN_ENDPOINT = f"{GIGYA_BASE_URL}/accounts.login"
 GIGYA_GET_JWT_ENDPOINT = f"{GIGYA_BASE_URL}/accounts.getJWT"
@@ -10,7 +12,7 @@ class GigyaApi:
     def __init__(self, api_key: str):
         self.api_key = api_key
 
-    def login(self, login_id: str, password: str) -> dict:
+    async def login(self, login_id: str, password: str) -> dict:
         payload = {
             "loginID": login_id,
             "password": password,
@@ -23,9 +25,10 @@ class GigyaApi:
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
         }
-        response = requests.post(GIGYA_LOGIN_ENDPOINT, data=payload, headers=headers, timeout=30)
-        response.raise_for_status()
-        response_data = response.json()
+        session = async_get_clientsession(self.hass)
+        async with session.post(GIGYA_LOGIN_ENDPOINT, data=payload, headers=headers, timeout=30) as response:
+            response.raise_for_status()
+            response_data = await response.json()
 
         if response_data.get("statusCode") != 200:
             raise Exception(f"Login failed: {response_data.get('errorDetails', 'Unknown error')}")
