@@ -26,6 +26,7 @@ class GigyaApi:
         }
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
         }
         session = async_get_clientsession(self.hass)
         async with session.post(GIGYA_LOGIN_ENDPOINT, data=payload, headers=headers, timeout=30) as response:
