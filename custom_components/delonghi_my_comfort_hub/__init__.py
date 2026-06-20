@@ -10,9 +10,15 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the integration using YAML configuration."""
 
-    username = config["username"]
-    password = config["password"]
-    gigya_api_key = config["gigya_api_key"]
+    domain_config = config.get(DOMAIN)
+
+    if not domain_config:
+        _LOGGER.error("Domain configuration not found")
+        return False
+
+    username = domain_config["username"]
+    password = domain_config["password"]
+    gigya_api_key = domain_config["gigya_api_key"]
 
     api = MyComfortHubApi(username, password, gigya_api_key)
     api.authenticate()
