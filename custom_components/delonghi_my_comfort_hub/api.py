@@ -1,4 +1,5 @@
 
+from homeassistant.core import HomeAssistant
 import requests
 
 from custom_components.delonghi_my_comfort_hub.gigya_api import GigyaApi
@@ -11,11 +12,11 @@ AWS_JOBS_URL = AWS_OTHER_URL + "jobs"
 AWS_SOURCE_HEADER = "comfort"
 
 class MyComfortHubApi:
-    def __init__(self, username: str, password: str, gigya_api_key: str):
+    def __init__(self, hass: HomeAssistant, username: str, password: str, gigya_api_key: str):
         self.username = username
         self.password = password
         self.gigya_api_key = gigya_api_key
-        self.gigya_api = GigyaApi(gigya_api_key)
+        self.gigya_api = GigyaApi(hass, gigya_api_key)
 
     async def authenticate(self):
         await self.gigya_api.login(self.username, self.password)

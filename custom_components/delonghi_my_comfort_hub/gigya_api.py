@@ -1,3 +1,4 @@
+from homeassistant.core import HomeAssistant
 import requests
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -9,7 +10,8 @@ GIGYA_GET_JWT_ENDPOINT = f"{GIGYA_BASE_URL}/accounts.getJWT"
 SESSION_EXPIRATION = 7776000
 
 class GigyaApi:
-    def __init__(self, api_key: str):
+    def __init__(self, hass: HomeAssistant, api_key: str):
+        self.hass = hass
         self.api_key = api_key
 
     async def login(self, login_id: str, password: str) -> dict:

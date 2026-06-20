@@ -20,7 +20,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
     password = domain_config["password"]
     gigya_api_key = domain_config["gigya_api_key"]
 
-    api = MyComfortHubApi(username, password, gigya_api_key)
+    api = MyComfortHubApi(hass, username, password, gigya_api_key)
     await api.authenticate()
 
     if not api.is_authenticated():
