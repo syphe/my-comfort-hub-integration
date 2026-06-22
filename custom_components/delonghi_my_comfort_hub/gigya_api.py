@@ -31,20 +31,21 @@ class GigyaApi:
         session = async_get_clientsession(self.hass)
         async with session.post(GIGYA_LOGIN_ENDPOINT, data=payload, headers=headers, timeout=30) as response:
             response.raise_for_status()
-            response_data = await response.json()
+            response_data = await response.json(content_type=None)
 
         if response_data.get("statusCode") != 200:
             raise Exception(f"Login failed: {response_data.get('errorDetails', 'Unknown error')}")
         
         self.login_response_data = response_data
         session_token, session_secret = self.extract_session_credentials()
-        jwt_response = self.get_jwt(session_token, session_secret)
+        jwt_response = await self.get_jwt(session_token, session_secret)
         self.aws_token = self.extract_aws_token(jwt_response)
 
-    def get_jwt(self, session_token: str, session_secret: str) -> dict:
+    async def get_jwt(self, session_token: str, session_secret: str) -> dict:
         # App exchanges session credentials for a dedicated JWT before AWS calls.
         headers = {
             "Authorization": f"Bearer {session_token}",
+            "Accept": "application/json"
         }
         params = {
             "secret": session_secret,
@@ -52,9 +53,10 @@ class GigyaApi:
             "apiKey": self.api_key,
             "httpStatusCodes": "true",
         }
-        response = requests.post(GIGYA_GET_JWT_ENDPOINT, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
-        return response.json()
+        session = async_get_clientsession(self.hass)
+        async with session.post(GIGYA_GET_JWT_ENDPOINT, headers=headers, params=params, timeout=30) as response:
+            response.raise_for_status()
+            return await response.json(content_type=None)
 
     def is_authenticated(self) -> bool:
         return hasattr(self, "aws_token") and self.aws_token is not None

@@ -2,3 +2,4 @@ python-dotenv
 requests
 paho-mqtt
 homeassistant
+voluptuous

@@ -1,8 +1,20 @@
 
+import json
+import logging
+import logging
+import secrets
+import string
+import time
+import asyncio
+
 from homeassistant.core import HomeAssistant
-import requests
 
 from custom_components.delonghi_my_comfort_hub.gigya_api import GigyaApi
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from custom_components.delonghi_my_comfort_hub.mqtt_client import MqttClient
+
+from paho.mqtt.client import MQTTMessage
 
 AWS_BASE_URL = "https://8q8c9xktb0.execute-api.eu-central-1.amazonaws.com/dlg-prod/"
 AWS_OTHER_URL = "https://gax54h1o65.execute-api.us-east-1.amazonaws.com/dlg-prod/"
@@ -11,29 +23,141 @@ AWS_JOBS_URL = AWS_OTHER_URL + "jobs"
 
 AWS_SOURCE_HEADER = "comfort"
 
+APP_ID = "comfort"
+
+LOGGER = logging.getLogger(__name__)
+
 class MyComfortHubApi:
     def __init__(self, hass: HomeAssistant, username: str, password: str, gigya_api_key: str):
+        self.hass = hass
         self.username = username
         self.password = password
         self.gigya_api_key = gigya_api_key
         self.gigya_api = GigyaApi(hass, gigya_api_key)
+        self.mqtt_client = MqttClient()
 
     async def authenticate(self):
         await self.gigya_api.login(self.username, self.password)
 
         if not self.gigya_api.is_authenticated():
             raise Exception("Authentication failed with Gigya API")
-        
         pass
+
+    async def connect_mqtt(self):
+        def on_message(topic: str, payload: str) -> None:
+            self.on_mqtt_message(topic, payload)
+        self.mqtt_client_client = await self.mqtt_client.mqtt_connect(self.gigya_api.aws_token, on_message)
+
+    def on_mqtt_message(self, topic: str, payload: str) -> None:
+        LOGGER.info(f'received mqtt message {topic} {payload}')
 
     def is_authenticated(self) -> bool:
         return self.gigya_api.is_authenticated()
 
-    def get_devices(self) -> dict:
+    async def get_devices(self) -> dict:
         headers = {
             "Authorization": f"Bearer {self.gigya_api.aws_token}",
             "source": AWS_SOURCE_HEADER,
+            "Accept": "application/json"
         }
-        response = requests.get(AWS_DEVICES_URL, headers=headers, timeout=30)
-        response.raise_for_status()
-        return response.json()
+        session = async_get_clientsession(self.hass)
+        async with session.get(AWS_DEVICES_URL, headers=headers, timeout=30) as response:
+            response.raise_for_status()
+            response_data = await response.json(content_type=None)
+
+        return response_data.get("ownedByMe", [])
+
+    async def run_shadow_get(self, machine_name: str, shadow_name: str) -> str:
+        accepted_topic = f"$aws/things/{machine_name}/shadow/name/{shadow_name}/get/accepted"
+        rejected_topic = f"$aws/things/{machine_name}/shadow/name/{shadow_name}/get/rejected"
+
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+
+        def on_message(client, topic: str, message: MQTTMessage) -> None:
+            LOGGER.info(f"Received MQTT message on topic {message.topic}: {message.payload}")
+            future.set_result(message.payload)
+
+        # client = await self.mqtt_client.mqtt_connect(self.gigya_api.aws_token, on_message=on_message)
+        try:
+            self.mqtt_client_client.subscribe(accepted_topic, qos=0)
+            self.mqtt_client_client.subscribe(rejected_topic, qos=0)
+
+            self.mqtt_client_client.message_callback_add(accepted_topic, on_message)
+            self.mqtt_client_client.message_callback_add(rejected_topic, on_message)
+
+            self.mqtt_client.publish_json(self.mqtt_client_client, f"$aws/things/{machine_name}/shadow/name/{shadow_name}/get", None)
+
+            await asyncio.wait_for(future, timeout=30)
+
+            return future.result()
+        finally:
+            # client.loop_stop()
+            # client.disconnect()
+            self.mqtt_client_client.message_callback_remove(accepted_topic)
+            self.mqtt_client_client.message_callback_remove(rejected_topic)
+            pass
+
+    def run_templated_command(
+        self,
+        machine_name: str,
+        message: str,
+        values: dict,
+    ) -> None:
+        command = self.build_app_command(
+            message=message,
+            values=values,
+        )
+        LOGGER.info(json.dumps(command, indent=2, sort_keys=True))
+        self.run_send_command(machine_name, command)
+
+    def build_app_command(
+        self,
+        message: str,
+        values: dict,
+    ) -> dict:
+        command = {
+            "AppId": APP_ID,
+            "Message": message,
+            "RequestId": ''.join(secrets.choice(string.ascii_letters) for _ in range(5)),
+            "TimeStamp": f"{time.strftime('%H:%M:%S')} - {time.strftime('%d.%m.%Y')}",
+        }
+        command.update(values)
+        return command
+    
+    def run_send_command(self, machine_name: str, command: dict) -> None:
+        received = {"done": False}
+        response_topic = self.mqtt_topics(machine_name)["command_response"]
+
+        def on_message(topic: str, payload: str) -> None:
+            if topic == response_topic:
+                received["done"] = True
+
+        # client = self.mqtt_connect(aws_token, on_message=on_message)
+        try:
+            self.mqtt_client_client.subscribe(response_topic, qos=0)
+            time.sleep(1)
+            self.mqtt_client.publish_json(self.mqtt_client_client, self.mqtt_topics(machine_name)["command_request"], command)
+            deadline = time.time() + 20
+            while time.time() < deadline and not received["done"]:
+                time.sleep(0.25)
+        finally:
+            # client.loop_stop()
+            # client.disconnect()
+            pass
+    
+    def mqtt_topics(self, machine_name: str) -> dict[str, str]:
+        shadow_prefix = f"$aws/things/{machine_name}/shadow/name"
+        return {
+            "status_get": f"{shadow_prefix}/MachineStatus/get",
+            "status_get_accepted": f"{shadow_prefix}/MachineStatus/get/accepted",
+            "status_update_accepted": f"{shadow_prefix}/MachineStatus/update/accepted",
+            "capabilities_get": f"{shadow_prefix}/MachineCapabilities/get",
+            "capabilities_get_accepted": f"{shadow_prefix}/MachineCapabilities/get/accepted",
+            "capabilities_update_accepted": f"{shadow_prefix}/MachineCapabilities/update/accepted",
+            "command_request": f"{machine_name}/commands/request",
+            "command_response": f"{machine_name}/commands/response",
+            "presence_connected": f"$aws/events/presence/connected/{machine_name}",
+            "presence_disconnected": f"$aws/events/presence/disconnected/{machine_name}",
+            "jobs_status": f"app/machine/{machine_name}/jobs/status",
+        }
