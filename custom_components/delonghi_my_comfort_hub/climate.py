@@ -56,47 +56,48 @@ class DelonghiMyComfortHubClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode:
-        device_status = int(self.coordinator.machine_status["state"]["reported"]["DeviceStatus"])
-        return HVACMode.HEAT if device_status == 1 else HVACMode.OFF
+        return self.coordinator.hvac_mode
     
     @property
     def current_temperature(self) -> float:
-        if self.coordinator.machine_status is None:
-            return 0
-        return float(self.coordinator.machine_status["state"]["reported"]["RoomTemp"]) / 10
+        return self.coordinator.current_temperature
     
     @property
     def target_temperature(self) -> float | None:
-        if self.coordinator.machine_status is None:
-            return 0
-        LOGGER.info(f'target temp {self.coordinator.machine_status["state"]["reported"]["TempSetPoint"]}')
-        return float(self.coordinator.machine_status["state"]["reported"]["TempSetPoint"])
-    
-    def set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature."""
-        LOGGER.info(f'Try to set temp {kwargs.get('temperature')}')
-
+        return self.coordinator.target_temperature
+        
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         temperature: float = kwargs.get('temperature')
         unit = "C"
         message = f"SetRoomTempRequest_deg{unit}"
-        self.coordinator.api.run_templated_command(
+        response = await self.coordinator.api.run_templated_command(
             self.coordinator.device_info.get("machineName"),
             message,
             {"Value": int(temperature)},
         )
+        if not response is None:
+            response_status = response.get("Response")
+            if response_status == 'OK':
+                self.coordinator.target_temperature = temperature
+                self.async_write_ha_state()
 
-    def set_hvac_mode(self, hvac_mode: HVACMode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         value = 1 if hvac_mode == 'heat' else 0
-        self.coordinator.api.run_templated_command(
+        response = await self.coordinator.api.run_templated_command(
             self.coordinator.device_info.get("machineName"),
             "SetDeviceStatusRequest",
             {"Value": value},
         )
 
+        if not response is None:
+            response_status = response.get('Response')
+            if response_status == 'OK':
+                self.coordinator.hvac_mode = hvac_mode
+                self.async_write_ha_state()
+
     @property
     def preset_mode(self) -> str | None:
         is_eco_mode = self.coordinator.machine_status["state"]["reported"]["PowerLimit"]
-        self.set_preset_mode
         if is_eco_mode == True:
             return PRESET_ECO
         return None

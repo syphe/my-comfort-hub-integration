@@ -98,7 +98,7 @@ class MyComfortHubApi:
             self.mqtt_client_client.message_callback_remove(rejected_topic)
             pass
 
-    def run_templated_command(
+    async def run_templated_command(
         self,
         machine_name: str,
         message: str,
@@ -109,7 +109,7 @@ class MyComfortHubApi:
             values=values,
         )
         LOGGER.info(json.dumps(command, indent=2, sort_keys=True))
-        self.run_send_command(machine_name, command)
+        return await self.run_send_command(machine_name, command)
 
     def build_app_command(
         self,
@@ -125,26 +125,29 @@ class MyComfortHubApi:
         command.update(values)
         return command
     
-    def run_send_command(self, machine_name: str, command: dict) -> None:
-        received = {"done": False}
+    async def run_send_command(self, machine_name: str, command: dict) -> None:
         response_topic = self.mqtt_topics(machine_name)["command_response"]
 
-        def on_message(topic: str, payload: str) -> None:
-            if topic == response_topic:
-                received["done"] = True
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+
+        def on_message(client: MqttClient, topic: str, message: MQTTMessage) -> None:
+            future.set_result(message.payload)
 
         # client = self.mqtt_connect(aws_token, on_message=on_message)
         try:
             self.mqtt_client_client.subscribe(response_topic, qos=0)
-            time.sleep(1)
+            self.mqtt_client_client.message_callback_add(response_topic, on_message)
+
             self.mqtt_client.publish_json(self.mqtt_client_client, self.mqtt_topics(machine_name)["command_request"], command)
-            deadline = time.time() + 20
-            while time.time() < deadline and not received["done"]:
-                time.sleep(0.25)
+
+            await asyncio.wait_for(future, timeout=30)
         finally:
-            # client.loop_stop()
-            # client.disconnect()
+            self.mqtt_client_client.message_callback_remove(response_topic)
             pass
+
+        result = future.result()
+        return json.loads(result) if not result is None else None
     
     def mqtt_topics(self, machine_name: str) -> dict[str, str]:
         shadow_prefix = f"$aws/things/{machine_name}/shadow/name"
