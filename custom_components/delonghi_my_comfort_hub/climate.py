@@ -21,7 +21,7 @@ DOMAIN = "delonghi_my_comfort_hub"
 
 LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities: AddEntitiesCallback,):
+async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entities: AddEntitiesCallback):
     LOGGER.info("Setting up Delonghi My Comfort Hub integration climate platform")
 
     data = hass.data[DOMAIN][config_entry.entry_id]

@@ -6,7 +6,9 @@ import secrets
 import string
 import time
 import asyncio
+import re
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from custom_components.delonghi_my_comfort_hub.gigya_api import GigyaApi
@@ -28,8 +30,9 @@ APP_ID = "comfort"
 LOGGER = logging.getLogger(__name__)
 
 class MyComfortHubApi:
-    def __init__(self, hass: HomeAssistant, username: str, password: str, gigya_api_key: str):
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, username: str, password: str, gigya_api_key: str):
         self.hass = hass
+        self.entry = entry
         self.username = username
         self.password = password
         self.gigya_api_key = gigya_api_key
@@ -50,6 +53,57 @@ class MyComfortHubApi:
 
     def on_mqtt_message(self, topic: str, payload: str) -> None:
         LOGGER.info(f'received mqtt message {topic} {payload}')
+
+        json_payload = json.loads(payload)
+
+        if re.match(r"\$aws/things/.*/shadow/name/MachineStatus/get/accepted", topic): 
+            machine_name = topic.split('/')[2]
+            LOGGER.info(f"Received MachineStatus get accepted for machine {machine_name}: {json_payload}")
+
+            domain = self.hass.data.get("delonghi_my_comfort_hub", {})
+            coordinators = domain.get(self.entry.entry_id, {}).get("coordinators", [])
+            for coordinator in coordinators:
+                if coordinator.device_info.get("machineName") == machine_name:
+                    LOGGER.info(f"Found matching coordinator for machine {machine_name}, updating state")
+                    # coordinator.update_state(json_payload)
+                    # self.hass.add_job(coordinator.async_update_listeners)
+                    break
+            return
+
+        machine_name = topic.split('/')[0]
+        message = json_payload.get("Message", None)
+        response = json_payload.get("Response", None)
+
+        if message == "SetRoomTempRequest_degC" and response == "OK":
+            value = float(json_payload.get("Value", None))
+            LOGGER.info(f"Successfully set room temperature to {value}°C")
+            
+            domain = self.hass.data.get("delonghi_my_comfort_hub", {})
+            LOGGER.info(f"Retrieved domain data: {domain}")
+            coordinators = domain.get(self.entry.entry_id, {}).get("coordinators", [])
+            LOGGER.info(f"Retrieved coordinators: {coordinators}")
+            for coordinator in coordinators:
+                if coordinator.device_info.get("machineName") == machine_name:
+                    LOGGER.info(f"Found matching coordinator for machine {machine_name}, refreshing data")
+                    coordinator.target_temperature = value
+                    self.hass.add_job(coordinator.async_update_listeners)
+                    break
+
+        if message == "SetDeviceStatusRequest" and response == "OK":
+            value = int(json_payload.get("Value", None))
+            hvac_mode = "heat" if value == 1 else "off"
+            LOGGER.info(f"Successfully set device status to {hvac_mode}")
+
+            domain = self.hass.data.get("delonghi_my_comfort_hub", {})
+            coordinators = domain.get(self.entry.entry_id, {}).get("coordinators", [])
+            for coordinator in coordinators:
+                if coordinator.device_info.get("machineName") == machine_name:
+                    LOGGER.info(f"Found matching coordinator for machine {machine_name}, refreshing data")
+                    coordinator.hvac_mode = hvac_mode
+                    self.hass.add_job(coordinator.async_update_listeners)
+                    break
+        
+
 
     def is_authenticated(self) -> bool:
         return self.gigya_api.is_authenticated()
@@ -164,3 +218,10 @@ class MyComfortHubApi:
             "presence_disconnected": f"$aws/events/presence/disconnected/{machine_name}",
             "jobs_status": f"app/machine/{machine_name}/jobs/status",
         }
+
+    def listen_for_mqtt_messages(self, machine_name: str):
+        LOGGER.info(f"Subscribing to MQTT topics for machine {machine_name}")
+        self.mqtt_client_client.subscribe(self.mqtt_topics(machine_name)["command_response"], qos=0)
+        self.mqtt_client_client.subscribe(self.mqtt_topics(machine_name)["status_update_accepted"], qos=0)
+        self.mqtt_client_client.subscribe(self.mqtt_topics(machine_name)["presence_connected"], qos=0)
+        self.mqtt_client_client.subscribe(self.mqtt_topics(machine_name)["presence_disconnected"], qos=0)
